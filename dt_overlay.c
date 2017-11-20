@@ -10,6 +10,7 @@
  * as published by the Free Software Foundation; either version
  * 2 of the License, or (at your option) any later version.
  */
+#define DEBUG
 #include <linux/ctype.h>
 #include <linux/cpu.h>
 #include <linux/module.h>
@@ -43,14 +44,13 @@ struct cfs_overlay_item {
 
 static int create_overlay(struct cfs_overlay_item *overlay, void *blob)
 {
-	int err;
+	int ret;
 
 	/* unflatten the tree */
 	of_fdt_unflatten_tree((void *)blob, &overlay->overlay);
 	if (overlay->overlay == NULL) {
 		pr_err("%s: failed to unflatten tree\n", __func__);
-		err = -EINVAL;
-		goto out_err;
+		return -EINVAL;
 	}
 	pr_debug("%s: unflattened OK\n", __func__);
 
@@ -58,23 +58,22 @@ static int create_overlay(struct cfs_overlay_item *overlay, void *blob)
 	of_node_set_flag(overlay->overlay, OF_DETACHED);
 
 	/* perform resolution */
-	err = of_resolve_phandles(overlay->overlay);
-	if (err != 0) {
+	ret = of_resolve_phandles(overlay->overlay);
+	if (ret != 0) {
 		pr_err("%s: Failed to resolve tree\n", __func__);
-		goto out_err;
+		return ret;
 	}
 	pr_debug("%s: resolved OK\n", __func__);
 
-	err = of_overlay_create(overlay->overlay);
-	if (err < 0) {
+	ret = of_overlay_create(overlay->overlay);
+	if (ret < 0) {
 		pr_err("%s: Failed to create overlay (err=%d)\n",
-				__func__, err);
-		goto out_err;
+				__func__, ret);
+		return ret;
 	}
-	overlay->ov_id = err;
+	overlay->ov_id = ret;
 
-out_err:
-	return err;
+	return 0;
 }
 
 static inline struct cfs_overlay_item *to_cfs_overlay_item(
@@ -107,6 +106,7 @@ static ssize_t cfs_overlay_item_path_store(struct config_item *item,
 	count = snprintf(overlay->path, sizeof(overlay->path) - 1, "%s", p);
 	overlay->path[sizeof(overlay->path) - 1] = '\0';
 
+
 	/* strip trailing newlines */
 	s = overlay->path + strlen(overlay->path);
 	while (s > overlay->path && *--s == '\n')
@@ -115,12 +115,16 @@ static ssize_t cfs_overlay_item_path_store(struct config_item *item,
 	pr_debug("%s: path is '%s'\n", __func__, overlay->path);
 
 	err = request_firmware(&overlay->fw, overlay->path, NULL);
-	if (err != 0)
+	if (err != 0) {
+		pr_err("%s: Can not request firmware\n", __func__);
 		goto out_err;
+	}
 
 	err = create_overlay(overlay, (void *)overlay->fw->data);
-	if (err != 0)
+	if (err != 0){
+		pr_err("%s: Can not create overlay\n", __func__);
 		goto out_err;
+	}
 
 	return count;
 
@@ -254,6 +258,14 @@ out:
 	return ret;
 }
 module_init(of_cfs_init);
+
+static void __exit of_cfs_exit(void)
+{
+	pr_info("%s\n", __func__);
+
+	configfs_unregister_subsystem(&of_cfs_subsys);
+}
+module_exit(of_cfs_exit);
 
 MODULE_ALIAS("configfs:overlay");
 MODULE_AUTHOR("Stefan Eichenberger");
