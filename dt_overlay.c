@@ -65,13 +65,12 @@ static int create_overlay(struct cfs_overlay_item *overlay, void *blob)
 	}
 	pr_debug("%s: resolved OK\n", __func__);
 
-	ret = of_overlay_create(overlay->overlay);
+	ret = of_overlay_fdt_apply(overlay->overlay, overlay->dtbo_size, &overlay->ov_id);
 	if (ret < 0) {
 		pr_err("%s: Failed to create overlay (err=%d)\n",
 				__func__, ret);
 		return ret;
 	}
-	overlay->ov_id = ret;
 
 	return 0;
 }
@@ -161,7 +160,7 @@ static void cfs_overlay_release(struct config_item *item)
 	struct cfs_overlay_item *overlay = to_cfs_overlay_item(item);
 
 	if (overlay->ov_id >= 0)
-		of_overlay_destroy(overlay->ov_id);
+		of_overlay_remove(&overlay->ov_id);
 	if (overlay->fw)
 		release_firmware(overlay->fw);
 	/* kfree with NULL is safe */
@@ -220,15 +219,12 @@ static struct config_item_type of_cfs_type = {
 	.ct_owner       = THIS_MODULE,
 };
 
-struct config_group of_cfs_overlay_group;
-
 static struct configfs_subsystem of_cfs_subsys = {
 	.su_group = {
 		.cg_item = {
 			.ci_namebuf = "device-tree",
 			.ci_type = &of_cfs_type,
 		},
-		.default_groups = &of_cfs_overlay_group.default_groups,
 	},
 	.su_mutex = __MUTEX_INITIALIZER(of_cfs_subsys.su_mutex),
 };
@@ -239,8 +235,7 @@ static int __init of_cfs_init(void)
 
 	pr_info("%s\n", __func__);
 
-	config_group_init(&of_cfs_subsys.su_group);
-	config_group_init_type_name(&of_cfs_overlay_group, "overlays",
+	config_group_init_type_name(&of_cfs_subsys.su_group, "overlays",
 			&overlays_type);
 
 	ret = configfs_register_subsystem(&of_cfs_subsys);
